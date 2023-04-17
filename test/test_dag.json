@@ -1,1 +1,1 @@
-{"dag_id":"this is a test dag in json format","tasks":[{"task_id":"task_a"},{"task_id":"task_b"}]}
+{"dag_id":"some dag id from ui","tasks":[{"task_id":"task_a"},{"task_id":"task_b"}]}
