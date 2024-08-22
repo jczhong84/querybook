@@ -25,7 +25,7 @@ services:
         image: *querybook-image
         tty: true
         stdin_open: true
-        # network_mode: 'host'
+        network_mode: 'host'
         command: './querybook/scripts/bundled_docker_run_web --initdb --initweb'
         ports:
             - '${PORT:-10001}:${PORT:-10001}'
@@ -43,6 +43,7 @@ services:
         image: *querybook-image
         tty: true
         stdin_open: true
+        network_mode: 'host'
         command: './querybook/scripts/runservice worker -c 5'
         volumes: *querybook-volumes
         depends_on: *querybook-depends-on
@@ -51,6 +52,7 @@ services:
         image: *querybook-image
         tty: true
         stdin_open: true
+        network_mode: 'host'
         command: './querybook/scripts/runservice scheduler --pidfile="/opt/celerybeat.pid"'
         volumes: *querybook-volumes
         depends_on: *querybook-depends-on
@@ -58,6 +60,7 @@ services:
         container_name: querybook_redis
         image: redis:5.0.9
         restart: always
+        network_mode: 'host'
         command: ['redis-server', '--appendonly', 'yes']
         hostname: redis
         ports:
@@ -71,6 +74,7 @@ services:
         container_name: querybook_mysql
         image: mysql:8.0
         restart: always
+        network_mode: 'host'
         ports:
             # <Port exposed> : < MySQL Port running inside container>
             - '3306:3306'
@@ -100,6 +104,7 @@ services:
     elasticsearch:
         container_name: querybook_elasticsearch
         image: opensearchproject/opensearch:2.9.0
+        network_mode: 'host'
         environment:
             cluster.name: docker-cluster
             bootstrap.memory_lock: 'true'
