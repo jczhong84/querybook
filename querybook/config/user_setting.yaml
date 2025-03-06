@@ -50,6 +50,12 @@ show_full_view:
         - disabled
     helper: Instead of modal, show full view when opening table/execution/snippet
 
+table_sample_rate:
+    default: ''
+    tab: general
+    options: []
+    helper: The sample rate will be pre-selected when a table supports sampling.
+
 editor_font_size:
     default: medium
     tab: editor
@@ -87,3 +93,11 @@ tab:
         - 'tab space 4'
         - tab
     helper: The spaces setting for code editor, this does not modify the existing code.
+
+sql_complete:
+    default: disabled
+    tab: editor
+    options:
+        - enabled
+        - disabled
+    helper: (Experimental) Enable it to receive inline AI-generated SQL completions as you type within the editor.

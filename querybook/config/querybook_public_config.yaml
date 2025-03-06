@@ -15,9 +15,16 @@ ai_assistant:
     table_vector_search:
         enabled: false
 
+    query_vector_search:
+        enabled: false
+
+    sql_complete:
+        enabled: false
+
 survey:
     global_response_cooldown: 2592000 # 30 days
     global_trigger_cooldown: 600 # 10 minutes
+    global_trigger_duration: 60 # 1 minute
     global_max_per_week: 6
     global_max_per_day: 3
 
@@ -29,3 +36,43 @@ survey:
     #     - surface: table_view
     #     - surface: text_to_sql
     #     - surface: query_authoring
+
+table_sampling:
+    enabled: false
+    sample_rates:
+        - 0.1
+    default_sample_rate: 0 # 0 means no sampling
+    sample_user_guide_link: ''
+    sampling_tool_tip_delay: 10000 # delay duration (ms) of sampling tool tip
+
+github_integration:
+    enabled: false
+
+peer_review:
+    enabled: true
+    request_texts:  # When users request reviews
+        description: |
+            This peer review system helps ensure query quality and data safety.
+
+            Note: Queries that fail after approval will require a new review request.
+
+            Important Guidelines:
+            • Choose reviewers familiar with the affected data
+            • Include relevant references in query title or justification
+            • Document query purpose and impact
+        guide_link: 'https://www.querybook.org/'
+        tip: |
+            Before Submitting:
+            • Run query to verify syntax
+            • Validate table names and fields
+            • Check query performance
+    reviewer_texts:  # When reviewers take actions
+        approve_message: |
+            As a reviewer, you are responsible for validating:
+
+            • Query purpose and necessity
+            • Potential data impact
+            • Compliance with data policies
+
+            Request clarification if more context is needed.
+            Approval cannot be reversed.

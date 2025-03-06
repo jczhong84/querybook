@@ -8,12 +8,14 @@ import React from 'react';
 import toast from 'react-hot-toast';
 import { connect } from 'react-redux';
 
-import { QueryGenerationButton } from 'components/AIAssistant/QueryGenerationButton';
+import { AICommandBar } from 'components/AIAssistant/AICommandBar';
 import { DataDocQueryExecutions } from 'components/DataDocQueryExecutions/DataDocQueryExecutions';
+import { DataDocTableSamplingInfo } from 'components/DataDocTableSamplingInfo/DataDocTableSamplingInfo';
 import { QueryCellTitle } from 'components/QueryCellTitle/QueryCellTitle';
 import { runQuery, transformQuery } from 'components/QueryComposer/RunQuery';
 import { BoundQueryEditor } from 'components/QueryEditor/BoundQueryEditor';
 import { IQueryEditorHandles } from 'components/QueryEditor/QueryEditor';
+import { QueryPeerReviewModal } from 'components/QueryPeerReviewModal/QueryPeerReviewModal';
 import {
     IQueryRunButtonHandles,
     QueryEngineSelector,
@@ -24,18 +26,20 @@ import { TemplatedQueryView } from 'components/TemplateQueryView/TemplatedQueryV
 import { TranspileQueryModal } from 'components/TranspileQueryModal/TranspileQueryModal';
 import { UDFForm } from 'components/UDFForm/UDFForm';
 import { ComponentType, ElementType } from 'const/analytics';
-import { IDataQueryCellMeta, TDataDocMetaVariables } from 'const/datadoc';
+import {
+    IDataQueryCellMeta,
+    IPeerReviewParams,
+    ISamplingTables,
+    TDataDocMetaVariables,
+} from 'const/datadoc';
+import { IDataTable } from 'const/metastore';
 import type { IQueryEngine, IQueryTranspiler } from 'const/queryEngine';
 import { SurveySurfaceType } from 'const/survey';
 import { triggerSurvey } from 'hooks/ui/useSurveyTrigger';
 import { trackClick } from 'lib/analytics';
 import CodeMirror from 'lib/codemirror';
-import { createSQLLinter } from 'lib/codemirror/codemirror-lint';
-import {
-    getQueryAsExplain,
-    getSelectedQuery,
-    IRange,
-} from 'lib/sql-helper/sql-lexer';
+import { isAIFeatureEnabled } from 'lib/public-config';
+import { getQueryAsExplain } from 'lib/sql-helper/sql-lexer';
 import { DEFAULT_ROW_LIMIT } from 'lib/sql-helper/sql-limiter';
 import { getPossibleTranspilers } from 'lib/templated-query/transpile';
 import { enableResizable } from 'lib/utils';
@@ -56,9 +60,9 @@ import { Dropdown } from 'ui/Dropdown/Dropdown';
 import { Icon } from 'ui/Icon/Icon';
 import { IListMenuItem, ListMenu } from 'ui/Menu/ListMenu';
 import { Modal } from 'ui/Modal/Modal';
+import { IResizableTextareaHandles } from 'ui/ResizableTextArea/ResizableTextArea';
 import { AccentText } from 'ui/StyledText/StyledText';
 
-import { ISelectedRange } from './common';
 import { ErrorQueryCell } from './ErrorQueryCell';
 
 import './DataDocQueryCell.scss';
@@ -102,13 +106,18 @@ interface IState {
     query: string;
     meta: IDataQueryCellMeta;
 
+    modifiedAt: number;
     focused: boolean;
-    selectedRange: ISelectedRange;
+    hasSelection: boolean;
     queryCollapsedOverride: boolean;
     showQuerySnippetModal: boolean;
     showRenderedTemplateModal: boolean;
     showUDFModal: boolean;
     hasLintError: boolean;
+    tableNamesInQuery: string[];
+    samplingTables: ISamplingTables;
+    showTableSamplingInfoModal: boolean;
+    showPeerReviewModal: boolean;
 
     transpilerConfig?: {
         toEngine: IQueryEngine;
@@ -119,6 +128,7 @@ interface IState {
 class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     private queryEditorRef = React.createRef<IQueryEditorHandles>();
     private runButtonRef = React.createRef<IQueryRunButtonHandles>();
+    private commandInputRef = React.createRef<IResizableTextareaHandles>();
 
     public constructor(props) {
         super(props);
@@ -126,13 +136,18 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
         this.state = {
             query: props.query,
             meta: props.meta,
+            modifiedAt: 0,
             focused: false,
-            selectedRange: null,
+            hasSelection: false,
             queryCollapsedOverride: null,
             showQuerySnippetModal: false,
             showRenderedTemplateModal: false,
             showUDFModal: false,
             hasLintError: false,
+            tableNamesInQuery: [],
+            samplingTables: {},
+            showTableSamplingInfoModal: false,
+            showPeerReviewModal: false,
         };
     }
 
@@ -195,10 +210,31 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
         return this.state.meta.limit ?? DEFAULT_ROW_LIMIT;
     }
 
+    public get samplingTables() {
+        const samplingTables = this.state.samplingTables;
+        Object.keys(samplingTables).forEach((tableName) => {
+            samplingTables[tableName].sample_rate = this.sampleRate;
+        });
+        return samplingTables;
+    }
+
+    public get hasSamplingTables() {
+        return Object.keys(this.state.samplingTables).length > 0;
+    }
+
+    public get sampleRate() {
+        // -1 for tables don't support sampling
+        const sampleRate = this.hasSamplingTables
+            ? this.state.meta.sample_rate
+            : -1;
+        return sampleRate;
+    }
+
     @decorate(memoizeOne)
     public _keyMapMemo(engines: IQueryEngine[]) {
         const keyMap = {
             [KeyMap.queryEditor.runQuery.key]: this.clickOnRunButton,
+            [KeyMap.queryEditor.focusCommandInput.key]: this.focusCommandInput,
         };
 
         for (const [index, engine] of engines.entries()) {
@@ -244,9 +280,9 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     }
 
     @bind
-    public onSelection(query: string, selectedRange: IRange) {
+    public onSelection(hasSelection: boolean) {
         this.setState({
-            selectedRange,
+            hasSelection,
         });
     }
 
@@ -275,27 +311,9 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
         });
     }
 
-    @decorate(memoizeOne)
-    public createGetLintAnnotations(
-        engineId: number,
-        templatedVariables: TDataDocMetaVariables
-    ) {
-        return createSQLLinter(engineId, templatedVariables);
-    }
-
     @bind
     public focus() {
-        if (
-            !(
-                this.queryEditorRef.current &&
-                this.queryEditorRef.current.getEditor
-            )
-        ) {
-            return;
-        }
-
-        const editor = this.queryEditorRef.current.getEditor();
-        editor.focus();
+        this.queryEditorRef.current?.focus();
     }
 
     @bind
@@ -343,10 +361,16 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     }
 
     @bind
+    public focusCommandInput() {
+        this.commandInputRef.current?.focus();
+    }
+
+    @bind
     public handleChange(query: string, run: boolean = false) {
         this.setState(
             {
                 query,
+                modifiedAt: Date.now(),
             },
             () => {
                 this.onChangeDebounced({ context: query });
@@ -392,51 +416,107 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     }
 
     @bind
+    public handleMetaSampleRateChange(sampleRate: number) {
+        return this.handleMetaChange('sample_rate', sampleRate);
+    }
+
+    @bind
     public async getTransformedQuery() {
         const { templatedVariables = [] } = this.props;
         const { query } = this.state;
-        const selectedRange =
-            this.queryEditorRef.current &&
-            this.queryEditorRef.current.getEditorSelection();
-        const rawQuery = getSelectedQuery(query, selectedRange);
+        const rawQuery = this.queryEditorRef.current?.getSelection?.() ?? query;
 
         return transformQuery(
             rawQuery,
+            this.queryEngine.language,
             templatedVariables,
             this.queryEngine,
-            this.rowLimit
+            this.rowLimit,
+            this.samplingTables,
+            this.sampleRate
         );
     }
 
     @bind
-    public async onRunButtonClick() {
+    public getQueryExecutionMetadata() {
+        const metadata = {};
+        if (this.sampleRate > 0) {
+            metadata['sample_rate'] = this.sampleRate;
+        }
+        return Object.keys(metadata).length === 0 ? null : metadata;
+    }
+
+    @bind
+    public async executeQuery(options: {
+        element: ElementType;
+        peerReviewParams?: IPeerReviewParams;
+        onSuccess?: (queryId: number) => void;
+    }): Promise<number | null> {
+        const { element, peerReviewParams, onSuccess } = options;
+
         trackClick({
             component: ComponentType.DATADOC_QUERY_CELL,
-            element: ElementType.RUN_QUERY_BUTTON,
+            element,
             aux: {
                 lintError: this.state.hasLintError,
+                sampleRate: this.sampleRate,
             },
         });
-        return runQuery(
-            await this.getTransformedQuery(),
-            this.engineId,
-            async (query, engineId) => {
-                const queryId = (
-                    await this.props.createQueryExecution(
-                        query,
-                        engineId,
-                        this.props.cellId
-                    )
-                ).id;
 
-                triggerSurvey(SurveySurfaceType.QUERY_AUTHORING, {
-                    query_execution_id: queryId,
-                    cell_id: this.props.cellId,
-                });
+        const transformedQuery = await this.getTransformedQuery();
+        const executionMetadata = this.getQueryExecutionMetadata();
 
-                return queryId;
+        try {
+            const queryId = await runQuery(
+                transformedQuery,
+                this.engineId,
+                async (query: string, engineId: number) => {
+                    const queryExecution =
+                        await this.props.createQueryExecution(
+                            query,
+                            engineId,
+                            this.props.cellId,
+                            executionMetadata,
+                            peerReviewParams
+                        );
+                    return queryExecution.id;
+                }
+            );
+
+            if (queryId != null) {
+                onSuccess?.(queryId);
             }
-        );
+
+            return queryId;
+        } catch (error) {
+            toast.error('Failed to execute query.');
+            console.error('Query Execution Error:', error);
+            throw error;
+        }
+    }
+
+    @bind
+    public async onRunButtonClick() {
+        return this.executeQuery({
+            element: ElementType.RUN_QUERY_BUTTON,
+            onSuccess: (queryId: number) => {
+                // Only trigger survey if the query is modified within 5 minutes
+                if (Date.now() - this.state.modifiedAt < 5 * 60 * 1000) {
+                    triggerSurvey(SurveySurfaceType.QUERY_AUTHORING, {
+                        query_execution_id: queryId,
+                        cell_id: this.props.cellId,
+                    });
+                }
+            },
+        });
+    }
+
+    @bind
+    public async onPeerReviewSubmit(peerReviewParams: IPeerReviewParams) {
+        return this.executeQuery({
+            element: ElementType.PEER_REVIEW_QUERY_BUTTON,
+            peerReviewParams,
+        });
     }
 
     @bind
@@ -490,10 +570,14 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
         );
 
         if (renderedQuery) {
+            const executionMetadata =
+                this.sampleRate > 0 ? { sample_rate: this.sampleRate } : null;
+
             return this.props.createQueryExecution(
                 renderedQuery,
                 this.engineId,
-                this.props.cellId
+                this.props.cellId,
+                executionMetadata
             );
         }
     }
@@ -518,6 +602,7 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     public getAdditionalDropDownButtonDOM() {
         const { isEditable, queryEngines, queryTranspilers } = this.props;
         const queryEngine = this.queryEngine;
+        const hasPeerReviewFeature = queryEngine?.feature_params?.peer_review;
 
         const queryCollapsed = this.queryCollapsed;
 
@@ -592,6 +677,16 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
             });
         }
 
+        if (hasPeerReviewFeature && isEditable) {
+            additionalButtons.push({
+                name: 'Request Query Review',
+                onClick: this.toggleShowPeerReviewModal,
+                icon: 'Send',
+                tooltip: 'Request a peer review for your query',
+                tooltipPos: 'right',
+            });
+        }
+
         return additionalButtons.length > 0 ? (
             <Dropdown
                 className="query-cell-additional-dropdown"
@@ -613,6 +708,11 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     public handleInsertSnippet(query: string) {
         this.handleChange(query);
         this.toggleInsertQuerySnippetModal();
+
+        trackClick({
+            component: ComponentType.DATADOC_QUERY_CELL,
+            element: ElementType.INSERT_SNIPPET_BUTTON,
+        });
     }
 
     @bind
@@ -630,12 +730,48 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
     }
 
     @bind
+    public toggleShowPeerReviewModal() {
+        const { query } = this.props;
+        if (this.state.showPeerReviewModal === false && query.trim() === '') {
+            toast.error('Cannot request a review for an empty query.');
+            return;
+        }
+        this.setState(({ showPeerReviewModal }) => ({
+            showPeerReviewModal: !showPeerReviewModal,
+        }));
+    }
+
+    @bind
+    public toggleShowTableSamplingInfoModal() {
+        this.setState(({ showTableSamplingInfoModal }) => ({
+            showTableSamplingInfoModal: !showTableSamplingInfoModal,
+        }));
+    }
+
+    @bind
     public fetchDataTableByNameIfNeeded(schema: string, table: string) {
         return this.props.fetchDataTableByNameIfNeeded(
             schema,
             table,
             this.props.queryEngineById[this.engineId].metastore_id
         );
+    }
+
+    @bind
+    public handleTablesChange(tablesByName: Record<string, IDataTable>) {
+        const samplingTables = {};
+        Object.keys(tablesByName).forEach((tableName) => {
+            const table = tablesByName[tableName];
+            if (table?.custom_properties?.sampling) {
+                samplingTables[tableName] = {
+                    sampled_table: table.custom_properties?.sampled_table,
+                };
+            }
+        });
+        this.setState({
+            samplingTables,
+            tableNamesInQuery: Object.keys(tablesByName),
+        });
     }
 
     public componentDidMount() {
@@ -679,7 +815,7 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
 
             isEditable,
         } = this.props;
-        const { meta, query, selectedRange } = this.state;
+        const { meta, query, hasSelection } = this.state;
 
         const queryTitleDOM = isEditable ? (
             <QueryCellTitle
@@ -695,33 +831,65 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
         );
 
         return (
-            <div className="query-metadata">
-                <AccentText className="query-title" weight="bold" size="large">
-                    {queryTitleDOM}
-                </AccentText>
-                <div className="query-controls flex-row">
-                    <QueryRunButton
-                        ref={this.runButtonRef}
-                        queryEngineById={queryEngineById}
-                        queryEngines={queryEngines}
-                        disabled={!isEditable}
-                        hasSelection={selectedRange != null}
-                        engineId={this.engineId}
-                        onRunClick={this.onRunButtonClick}
-                        onEngineIdSelect={this.handleMetaChange.bind(
+            <>
+                <div className="query-metadata">
+                    <AccentText
+                        className="query-title"
+                        weight="bold"
+                        size="large"
+                    >
+                        {queryTitleDOM}
+                    </AccentText>
+                    <div className="query-controls flex-row">
+                        <QueryRunButton
+                            ref={this.runButtonRef}
+                            queryEngineById={queryEngineById}
+                            queryEngines={queryEngines}
+                            disabled={!isEditable}
+                            hasSelection={hasSelection}
+                            engineId={this.engineId}
+                            onRunClick={this.onRunButtonClick}
+                            onEngineIdSelect={this.handleMetaChange.bind(
+                                this,
+                                'engine'
+                            )}
+                            rowLimit={this.rowLimit}
+                            onRowLimitChange={
+                                this.hasRowLimit
+                                    ? this.handleMetaRowLimitChange
+                                    : null
+                            }
+                            hasSamplingTables={this.hasSamplingTables}
+                            sampleRate={this.sampleRate}
+                            onSampleRateChange={
+                                this.hasSamplingTables
+                                    ? this.handleMetaSampleRateChange
+                                    : null
+                            }
+                            onTableSamplingInfoClick={
+                                this.toggleShowTableSamplingInfoModal
+                            }
+                        />
+                        {this.getAdditionalDropDownButtonDOM()}
+                    </div>
+                </div>
+                {isAIFeatureEnabled() && isEditable && (
+                    <AICommandBar
+                        query={query}
+                        queryEngine={queryEngineById[this.engineId]}
+                        tablesInQuery={this.state.tableNamesInQuery}
+                        onUpdateQuery={this.handleChange}
+                        onUpdateEngineId={this.handleMetaChange.bind(
                             this,
                             'engine'
                         )}
-                        rowLimit={this.rowLimit}
-                        onRowLimitChange={
-                            this.hasRowLimit
-                                ? this.handleMetaRowLimitChange
-                                : null
-                        }
+                        onFormatQuery={this.formatQuery.bind(this, {
+                            case: 'upper',
+                        })}
+                        ref={this.commandInputRef}
                     />
-                    {this.getAdditionalDropDownButtonDOM()}
-                </div>
-            </div>
+                )}
+            </>
         );
     }
 
@@ -755,18 +923,6 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
 
         const editorDOM = !queryCollapsed && (
             <div className="editor">
-                <QueryGenerationButton
-                    dataCellId={cellId}
-                    query={query}
-                    engineId={this.engineId}
-                    onUpdateQuery={this.handleChange}
-                    queryEngineById={queryEngineById}
-                    queryEngines={this.props.queryEngines}
-                    onUpdateEngineId={this.handleMetaChange.bind(
-                        this,
-                        'engine'
-                    )}
-                />
                 <BoundQueryEditor
                     value={query}
                     lineWrapping={true}
@@ -775,21 +931,16 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
                     onFocus={this.onFocus}
                     onBlur={this.onBlur}
                     onSelection={this.onSelection}
+                    onTablesChange={this.handleTablesChange}
                     readOnly={!isEditable}
                     keyMap={this.keyMap}
                     ref={this.queryEditorRef}
                     engine={queryEngine}
                     cellId={cellId}
                     height={isFullScreen ? 'full' : 'auto'}
+                    templatedVariables={this.props.templatedVariables}
                     onFullScreen={this.props.toggleFullScreen}
-                    getLintErrors={
-                        this.hasQueryValidators
-                            ? this.createGetLintAnnotations(
-                                  this.engineId,
-                                  this.props.templatedVariables
-                              )
-                            : null
-                    }
+                    hasQueryLint={this.hasQueryValidators}
                     onLintCompletion={this.onLintCompletion}
                 />
                 {openSnippetDOM}
@@ -845,6 +996,23 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
             />
         ) : null;
 
+        const renderTableSamplingInfoDOM = this.state
+            .showTableSamplingInfoModal && (
+            <DataDocTableSamplingInfo
+                query={this.state.query}
+                language={this.queryEngine.language}
+                samplingTables={this.samplingTables}
+                onHide={this.toggleShowTableSamplingInfoModal}
+            />
+        );
+
+        const peerReviewModalDOM = this.state.showPeerReviewModal ? (
+            <QueryPeerReviewModal
+                onSubmit={this.onPeerReviewSubmit}
+                onHide={this.toggleShowPeerReviewModal}
+            />
+        ) : null;
+
         return (
             <>
                 {editorDOM}
@@ -852,6 +1020,8 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
                 {templatedQueryViewModalDOM}
                 {UDFModal}
                 {transpilerModal}
+                {renderTableSamplingInfoDOM}
+                {peerReviewModalDOM}
             </>
         );
     }
@@ -865,6 +1035,9 @@ class DataDocQueryCellComponent extends React.PureComponent<IProps, IState> {
                 cellId={cellId}
                 isQueryCollapsed={this.queryCollapsed}
                 changeCellContext={isEditable ? this.handleChange : null}
+                onSamplingInfoClick={this.toggleShowTableSamplingInfoModal}
+                hasSamplingTables={this.hasSamplingTables}
+                sampleRate={this.sampleRate}
             />
         );
     }
@@ -981,8 +1154,19 @@ function mapDispatchToProps(dispatch: Dispatch) {
         createQueryExecution: (
             query: string,
             engineId: number,
-            cellId: number
-        ) => dispatch(createQueryExecution(query, engineId, cellId)),
+            cellId: number,
+            metadata: Record<string, string | number>,
+            peerReviewParams?: IPeerReviewParams
+        ) =>
+            dispatch(
+                createQueryExecution(
+                    query,
+                    engineId,
+                    cellId,
+                    metadata,
+                    peerReviewParams
+                )
+            ),
 
         setTableSidebarId: (id: number) => dispatch(setSidebarTableId(id)),
 

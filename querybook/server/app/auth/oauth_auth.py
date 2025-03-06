@@ -75,7 +75,7 @@ class OAuthLoginManager(object):
         LOG.debug("Handling Oauth callback...")
 
         if request.args.get("error"):
-            return f"<h1>Error: { Markup.escape(request.args.get('error')) }</h1>"
+            return f"<h1>Error: {Markup.escape(request.args.get('error'))}</h1>"
 
         code = request.args.get("code")
         try:
@@ -127,8 +127,8 @@ class OAuthLoginManager(object):
 
     @with_session
     def login_user(self, username, email, session=None):
-        if not username:
-            raise AuthenticationError("Username must not be empty!")
+        if not username or not isinstance(username, str):
+            raise AuthenticationError("Please provide a valid username")
 
         user = get_user_by_name(username, session=session)
         if not user:

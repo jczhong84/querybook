@@ -6,7 +6,6 @@ import CreatableSelect from 'react-select/creatable';
 
 import { UserAvatar } from 'components/UserBadge/UserAvatar';
 import { UserSelect } from 'components/UserSelect/UserSelect';
-import PublicConfig from 'config/querybook_public_config.yaml';
 import { ComponentType, ElementType } from 'const/analytics';
 import {
     IBoardPreview,
@@ -19,6 +18,7 @@ import { useShallowSelector } from 'hooks/redux/useShallowSelector';
 import { useSurveyTrigger } from 'hooks/ui/useSurveyTrigger';
 import { useTrackView } from 'hooks/useTrackView';
 import { trackClick, trackView } from 'lib/analytics';
+import { isAIFeatureEnabled } from 'lib/public-config';
 import { titleize } from 'lib/utils';
 import { getCurrentEnv } from 'lib/utils/query-string';
 import {
@@ -54,6 +54,7 @@ import { SimpleReactSelect } from 'ui/SimpleReactSelect/SimpleReactSelect';
 import { AccentText, EmptyText } from 'ui/StyledText/StyledText';
 import { Tabs } from 'ui/Tabs/Tabs';
 import { ToggleSwitch } from 'ui/ToggleSwitch/ToggleSwitch';
+import { TopTierCrown } from 'ui/TopTierCrown/TopTierCrown';
 
 import { EntitySelect } from './EntitySelect';
 import { SearchDatePicker } from './SearchDatePicker';
@@ -67,8 +68,6 @@ import { SearchSchemaSelect } from './SearchSchemaSelect';
 import { TableSelect } from './TableSelect';
 
 import './SearchOverview.scss';
-
-const AIAssistantConfig = PublicConfig.ai_assistant;
 
 const userReactSelectStyle = makeReactSelectStyle(
     true,
@@ -300,6 +299,12 @@ export const SearchOverview: React.FC<ISearchOverviewProps> = ({
                 ? 'Search data docs'
                 : 'Search tables';
 
+        const showVectorSearch =
+            (searchType === SearchType.Table &&
+                isAIFeatureEnabled('table_vector_search')) ||
+            (searchType === SearchType.Query &&
+                isAIFeatureEnabled('query_vector_search'));
+
         return (
             <div className="search-bar-wrapper">
                 <SearchBar
@@ -312,19 +317,17 @@ export const SearchOverview: React.FC<ISearchOverviewProps> = ({
                     placeholder={placeholder}
                     autoFocus
                 />
-                {searchType === SearchType.Table &&
-                    AIAssistantConfig.enabled &&
-                    AIAssistantConfig.table_vector_search.enabled && (
-                        <div className="mt8 flex-row">
-                            <AccentText weight="bold" className="ml8 mr12">
-                                Natural Language Search
-                            </AccentText>
-                            <ToggleSwitch
-                                checked={useVectorSearch}
-                                onChange={(val) => updateUseVectorSearch(val)}
-                            />
-                        </div>
-                    )}
+                {showVectorSearch && (
+                    <div className="mt8 flex-row">
+                        <AccentText weight="bold" className="ml8 mr12">
+                            Natural Language Search
+                        </AccentText>
+                        <ToggleSwitch
+                            checked={useVectorSearch}
+                            onChange={(val) => updateUseVectorSearch(val)}
+                        />
+                    </div>
+                )}
             </div>
         );
     };
@@ -752,7 +755,7 @@ export const SearchOverview: React.FC<ISearchOverviewProps> = ({
                     <div className="result-item-golden horizontal-space-between">
                         <span>
                             <span>top tier only</span>
-                            <Icon className="crown ml4" name="Crown" />
+                            <TopTierCrown />
                         </span>
                         <Checkbox
                             value={!!searchFilters.golden}
@@ -775,6 +778,7 @@ export const SearchOverview: React.FC<ISearchOverviewProps> = ({
                     <SearchSchemaSelect
                         updateSearchFilter={updateSearchFilter}
                         schema={searchFilters?.schema}
+                        metastoreId={metastoreId}
                     />
                 </div>
                 {queryMetastoreHasDataElements && (

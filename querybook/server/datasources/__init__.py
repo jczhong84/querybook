@@ -17,6 +17,9 @@ from . import event_log
 from . import data_element
 from . import comment
 from . import survey
+from . import query_transform
+from . import github
+from . import query_review
 
 # Keep this at the end of imports to make sure the plugin APIs override the default ones
 try:
@@ -44,4 +47,7 @@ event_log
 data_element
 comment
 survey
+query_transform
 api_plugin
+github
+query_review

@@ -15,3 +15,5 @@ from .event_log import *
 from .data_element import *
 from .comment import *
 from .survey import *
+from .github import *
+from .query_review import *

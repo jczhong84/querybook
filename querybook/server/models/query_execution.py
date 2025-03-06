@@ -63,7 +63,7 @@ class QueryExecution(Base):
     )
 
     @with_formatted_date
-    def to_dict(self, with_statement=True):
+    def to_dict(self, with_statement=True, with_query_review=False):
         item = {
             "id": self.id,
             "task_id": self.task_id,
@@ -79,6 +79,9 @@ class QueryExecution(Base):
             item["statement_executions"] = [
                 s.to_dict() for s in self.statement_executions
             ]
+
+        if with_query_review:
+            item["review"] = self.review.to_dict() if self.review else None
 
         return item
 
@@ -185,6 +188,39 @@ class QueryExecutionNotification(Base):
             "id": self.id,
             "query_execution_id": self.query_execution_id,
             "user": self.user,
+        }
+
+
+class QueryExecutionMetadata(CRUDMixin, Base):
+    """
+    Represents metadata for a query execution.
+
+    Attributes:
+        id: primary key
+        query_execution_id: foreign key of the related query execution.
+        execution_metadata: A JSON object containing metadata about the query execution.
+            - 'sample_rate': The rate at which the table was sampled for this query execution.
+    """
+
+    __tablename__ = "query_execution_metadata"
+
+    id = sql.Column(sql.Integer, primary_key=True)
+    query_execution_id = sql.Column(
+        sql.Integer, sql.ForeignKey("query_execution.id", ondelete="CASCADE")
+    )
+    execution_metadata = sql.Column(sql.JSON)
+
+    query_execution = relationship(
+        "QueryExecution",
+        uselist=False,
+        backref=backref("metadata", cascade="all, delete", passive_deletes=True),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "query_execution_id": self.query_execution_id,
+            "metadata": self.execution_metadata,
         }
 
 

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { escape, escapeRegExp } from 'lodash';
 import React, { useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -19,11 +20,11 @@ import { Button } from 'ui/Button/Button';
 import { IconButton } from 'ui/Button/IconButton';
 import { ThemedCodeHighlight } from 'ui/CodeHighlight/ThemedCodeHighlight';
 import { UrlContextMenu } from 'ui/ContextMenu/UrlContextMenu';
-import { Icon } from 'ui/Icon/Icon';
 import { Level } from 'ui/Level/Level';
 import { LoadingRow } from 'ui/Loading/Loading';
 import { AccentText, StyledText, UntitledText } from 'ui/StyledText/StyledText';
 import { Tag } from 'ui/Tag/Tag';
+import { TopTierCrown } from 'ui/TopTierCrown/TopTierCrown';
 
 import { SearchResultItemBoardItemAddButton } from './SearchResultItemBoardItemAddButton';
 
@@ -55,7 +56,9 @@ const HighlightTitle: React.FunctionComponent<{
             <div
                 className="result-item-title"
                 dangerouslySetInnerHTML={{
-                    __html: highlightedTitle,
+                    __html: DOMPurify.sanitize(highlightedTitle, {
+                        USE_PROFILES: { html: true },
+                    }),
                 }}
             />
         </AccentText>
@@ -166,8 +169,9 @@ export const QueryItem: React.FunctionComponent<IQueryItemProps> = ({
             {!isQueryTextExpanded ? (
                 <span
                     dangerouslySetInnerHTML={{
-                        __html: formatHighlightStrings(
-                            queryTextHighlightedContent
+                        __html: DOMPurify.sanitize(
+                            formatHighlightStrings(queryTextHighlightedContent),
+                            { USE_PROFILES: { html: true } }
                         ),
                     }}
                 />
@@ -281,7 +285,10 @@ export const DataDocItem: React.FunctionComponent<IDataDocItemProps> = ({
         <span
             className="result-item-description"
             dangerouslySetInnerHTML={{
-                __html: formatHighlightStrings(dataDocContent),
+                __html: DOMPurify.sanitize(
+                    formatHighlightStrings(dataDocContent),
+                    { USE_PROFILES: { html: true } }
+                ),
             }}
         />
     );
@@ -372,16 +379,17 @@ export const DataTableItem: React.FunctionComponent<IDataTableItemProps> = ({
     );
 
     const goldenIcon = golden ? (
-        <div className="result-item-golden ml4">
-            <Icon className="crown" name="Crown" />
-        </div>
+        <TopTierCrown showTooltip={true} tooltipPos="right" />
     ) : null;
 
     const highlightedDescription = (preview.highlight || {}).description;
     const descriptionDOM = highlightedDescription ? (
         <span
             dangerouslySetInnerHTML={{
-                __html: formatHighlightStrings(highlightedDescription),
+                __html: DOMPurify.sanitize(
+                    formatHighlightStrings(highlightedDescription),
+                    { USE_PROFILES: { html: true } }
+                ),
             }}
         />
     ) : (
@@ -484,7 +492,10 @@ export const BoardItem: React.FunctionComponent<{
     const descriptionDOM = highlightedDescription ? (
         <span
             dangerouslySetInnerHTML={{
-                __html: formatHighlightStrings(highlightedDescription),
+                __html: DOMPurify.sanitize(
+                    formatHighlightStrings(highlightedDescription),
+                    { USE_PROFILES: { html: true } }
+                ),
             }}
         />
     ) : (

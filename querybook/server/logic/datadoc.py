@@ -9,6 +9,7 @@ from const.query_execution import QueryExecutionStatus
 from lib.sqlalchemy import update_model_fields
 from lib.data_doc.data_cell import cell_types, sanitize_data_cell_meta
 from logic.query_execution import get_last_query_execution_from_cell
+from logic.generic_permission import get_all_groups_and_group_members_with_access
 from models.datadoc import (
     DataDoc,
     DataDocDataCell,
@@ -28,7 +29,6 @@ from tasks.sync_es_queries_by_datadoc import (
     sync_es_queries_by_datadoc_id,
     sync_es_query_cells_by_datadoc_id,
 )
-
 
 """
     ----------------------------------------------------------------------------------------------------------
@@ -246,6 +246,59 @@ def clone_data_doc(id, owner_uid, commit=True, session=None):
         session.flush()
     session.refresh(new_data_doc)
     return new_data_doc
+
+
+@with_session
+def restore_data_doc_from_commit(
+    datadoc_id: int, commit_datadoc: DataDoc, commit=True, session=None
+) -> DataDoc:
+    data_doc = get_data_doc_by_id(datadoc_id, session=session)
+    assert data_doc is not None, "DataDoc not found"
+
+    # Update the DataDoc's title and meta
+    data_doc = update_data_doc(
+        datadoc_id,
+        title=commit_datadoc.title,
+        meta=commit_datadoc.meta,
+        commit=False,
+        session=session,
+    )
+
+    # Delete existing DataDocCells and DataCells
+    for existing_cell in data_doc.cells:
+        delete_data_doc_cell(
+            data_doc_id=data_doc.id,
+            data_cell_id=existing_cell.id,
+            commit=False,
+            session=session,
+        )
+
+    # Create new DataCells from commit and add them to the DataDoc
+    for index, cell in enumerate(commit_datadoc.cells):
+        data_cell = create_data_cell(
+            cell_type=cell.cell_type.name,
+            context=cell.context,
+            meta=cell.meta,
+            commit=False,
+            session=session,
+        )
+        insert_data_doc_cell(
+            data_doc_id=data_doc.id,
+            cell_id=data_cell.id,
+            index=index,
+            commit=False,
+            session=session,
+        )
+
+    if commit:
+        session.commit()
+        update_es_data_doc_by_id(data_doc.id)
+        update_es_queries_by_datadoc_id(data_doc.id)
+    else:
+        session.flush()
+
+    session.refresh(data_doc)
+    return data_doc
 
 
 """
@@ -811,7 +864,23 @@ def get_data_doc_editor_by_id(id, session=None):
 
 @with_session
 def get_data_doc_editors_by_doc_id(data_doc_id, session=None):
-    return session.query(DataDocEditor).filter_by(data_doc_id=data_doc_id).all()
+    editors = get_all_groups_and_group_members_with_access(
+        doc_or_board_id=data_doc_id,
+        editor_type=DataDocEditor,
+        session=session,
+    )
+
+    return [
+        DataDocEditor(
+            # [0] is id, [1] is uid, [2] is read, [3] is write
+            data_doc_id=data_doc_id,
+            id=editor[0],
+            uid=editor[1],
+            read=editor[2],
+            write=editor[3],
+        )
+        for editor in editors
+    ]
 
 
 @with_session
@@ -823,6 +892,12 @@ def get_data_doc_writers_by_doc_id(doc_id, session=None):
 def create_data_doc_editor(
     data_doc_id, uid, read=False, write=False, commit=True, session=None
 ):
+    existing_editor = (
+        session.query(DataDocEditor).filter_by(data_doc_id=data_doc_id, uid=uid).first()
+    )
+    if existing_editor is not None:
+        return update_data_doc_editor(existing_editor.id, read, write, session=session)
+
     editor = DataDocEditor(data_doc_id=data_doc_id, uid=uid, read=read, write=write)
 
     session.add(editor)

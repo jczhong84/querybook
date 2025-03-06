@@ -5,6 +5,7 @@ from const.elasticsearch import ElasticsearchItem
 from const.metastore import DataOwner, DataTableWarningSeverity
 from lib.logger import get_logger
 from lib.sqlalchemy import update_model_fields
+from logic import data_element as data_element_logic
 from logic.user import get_user_by_name
 from models.admin import QueryEngineEnvironment
 from models.metastore import (
@@ -211,12 +212,17 @@ def create_table(
         "name": name,
         "type": type,
         "owner": owner,
-        "table_created_at": datetime.datetime.fromtimestamp(float(table_created_at))
-        if table_created_at
-        else None,
-        "table_updated_by": datetime.datetime.fromtimestamp(float(table_updated_at))
-        if table_updated_at
-        else None,
+        "table_created_at": (
+            datetime.datetime.fromtimestamp(float(table_created_at))
+            if table_created_at
+            else None
+        ),
+        "table_updated_at": (
+            datetime.datetime.fromtimestamp(float(table_updated_at))
+            if table_updated_at
+            else None
+        ),
+        "table_updated_by": table_updated_by,
         "data_size_bytes": data_size_bytes,
         "location": location,
         "column_count": column_count,
@@ -277,6 +283,7 @@ def create_table_information(
     hive_metastore_description=None,
     partition_keys=[],
     custom_properties=None,
+    table_links=None,
     commit=False,
     session=None,
 ):
@@ -295,6 +302,7 @@ def create_table_information(
         hive_metastore_description=hive_metastore_description,
         column_info=column_infomation,
         custom_properties=custom_properties,
+        table_links=table_links,
     )
 
     # The reason that we dont add description direclty in
@@ -343,7 +351,9 @@ def create_table_warnings(
                 "message": message,
                 "severity": severity,
                 "table_id": table_id,
-            }
+            },
+            commit=False,
+            session=session,
         )
     if commit:
         session.commit()
@@ -498,6 +508,38 @@ def get_column_by_table_id(table_id, session=None):
         .filter(DataTableColumn.table_id == table_id)
         .all()
     )
+
+
+@with_session
+def get_detailed_column_dict(column: DataTableColumn, with_table=False, session=None):
+    from logic import tag as tag_logic
+
+    column_dict = column.to_dict(with_table)
+    column_dict["stats"] = DataTableColumnStatistics.get_all(
+        column_id=column.id, session=session
+    )
+    column_dict["tags"] = tag_logic.get_tags_by_column_id(
+        column_id=column.id, session=session
+    )
+    column_dict[
+        "data_element_association"
+    ] = data_element_logic.get_data_element_association_by_column_id(
+        column.id, session=session
+    )
+    return column_dict
+
+
+@with_session
+def get_detailed_columns_dict_by_table_id(table_id, session=None):
+    data_table_columns = (
+        session.query(DataTableColumn)
+        .filter(DataTableColumn.table_id == table_id)
+        .all()
+    )
+    columns_info = []
+    for col in data_table_columns:
+        columns_info.append(get_detailed_column_dict(col, session=session))
+    return columns_info
 
 
 @with_session

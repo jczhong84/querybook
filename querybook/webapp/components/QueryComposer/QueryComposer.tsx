@@ -10,11 +10,13 @@ import React, {
 import toast from 'react-hot-toast';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { DataDocTableSamplingInfo } from 'components/DataDocTableSamplingInfo/DataDocTableSamplingInfo';
 import { DataDocTemplateInfoButton } from 'components/DataDocTemplateButton/DataDocTemplateInfoButton';
 import { DataDocTemplateVarForm } from 'components/DataDocTemplateButton/DataDocTemplateVarForm';
 import { detectVariableType } from 'components/DataDocTemplateButton/helpers';
 import { BoundQueryEditor } from 'components/QueryEditor/BoundQueryEditor';
 import { IQueryEditorHandles } from 'components/QueryEditor/QueryEditor';
+import { QueryPeerReviewModal } from 'components/QueryPeerReviewModal/QueryPeerReviewModal';
 import {
     IQueryRunButtonHandles,
     QueryRunButton,
@@ -28,8 +30,9 @@ import { TemplatedQueryView } from 'components/TemplateQueryView/TemplatedQueryV
 import { TranspileQueryModal } from 'components/TranspileQueryModal/TranspileQueryModal';
 import { UDFForm } from 'components/UDFForm/UDFForm';
 import { ComponentType, ElementType } from 'const/analytics';
-import { IDataDocMetaVariable } from 'const/datadoc';
+import { IDataDocMetaVariable, IPeerReviewParams } from 'const/datadoc';
 import KeyMap from 'const/keyMap';
+import { IDataTable } from 'const/metastore';
 import { IQueryEngine } from 'const/queryEngine';
 import { ISearchOptions, ISearchResult } from 'const/searchAndReplace';
 import { SurveySurfaceType } from 'const/survey';
@@ -38,9 +41,7 @@ import { useSurveyTrigger } from 'hooks/ui/useSurveyTrigger';
 import { useBrowserTitle } from 'hooks/useBrowserTitle';
 import { useTrackView } from 'hooks/useTrackView';
 import { trackClick } from 'lib/analytics';
-import { createSQLLinter } from 'lib/codemirror/codemirror-lint';
 import { replaceStringIndices, searchText } from 'lib/data-doc/search';
-import { getSelectedQuery, IRange } from 'lib/sql-helper/sql-lexer';
 import { DEFAULT_ROW_LIMIT } from 'lib/sql-helper/sql-limiter';
 import { getPossibleTranspilers } from 'lib/templated-query/transpile';
 import { enableResizable, getQueryEngineId, sleep } from 'lib/utils';
@@ -161,6 +162,40 @@ const useRowLimit = (dispatch: Dispatch, environmentId: number) => {
     return { rowLimit, setRowLimit };
 };
 
+const useTableSampleRate = (
+    dispatch: Dispatch,
+    environmentId: number,
+    samplingTables: Record<string, any>
+) => {
+    const sampleRate = useSelector(
+        (state: IStoreState) => state.adhocQuery[environmentId]?.sampleRate
+    );
+    const setSampleRate = useCallback(
+        (newSampleRate: number) =>
+            dispatch(
+                adhocQueryActions.receiveAdhocQuery(
+                    { sampleRate: newSampleRate },
+                    environmentId
+                )
+            ),
+        [dispatch, environmentId]
+    );
+
+    const getSampleRate = useCallback(
+        () => (Object.keys(samplingTables).length > 0 ? sampleRate : -1),
+        [sampleRate, samplingTables]
+    );
+
+    const getSamplingTables = useCallback(() => {
+        Object.keys(samplingTables).forEach((tableName) => {
+            samplingTables[tableName].sample_rate = getSampleRate();
+        });
+        return samplingTables;
+    }, [getSampleRate, samplingTables]);
+
+    return { setSampleRate, getSampleRate, getSamplingTables };
+};
+
 const useTemplatedVariables = (dispatch: Dispatch, environmentId: number) => {
     const reduxTemplatedVariables = useSelector(
         (state: IStoreState) =>
@@ -259,9 +294,7 @@ function useQueryEditorHelpers() {
     }, []);
 
     const handleFocusEditor = useCallback(() => {
-        if (queryEditorRef.current) {
-            queryEditorRef.current.getEditor()?.focus();
-        }
+        queryEditorRef.current?.focus();
     }, []);
 
     useEffect(() => {
@@ -296,27 +329,6 @@ function useKeyMap(
 
         return keyMap;
     }, [clickOnRunButton, queryEngines, setEngineId]);
-}
-
-function useQueryLint(
-    queryEngine: IQueryEngine,
-    templatedVariables: IDataDocMetaVariable[]
-) {
-    const hasQueryValidators = Boolean(queryEngine?.feature_params?.validator);
-
-    const getLintAnnotations = useMemo(() => {
-        if (!hasQueryValidators) {
-            return null;
-        }
-
-        return (query: string, cm: CodeMirror.Editor) =>
-            createSQLLinter(queryEngine.id, templatedVariables)(query, cm);
-    }, [hasQueryValidators, queryEngine?.id, templatedVariables]);
-
-    return {
-        hasQueryValidators,
-        getLintAnnotations,
-    };
 }
 
 function useTranspileQuery(
@@ -393,7 +405,9 @@ const QueryComposer: React.FC = () => {
         environmentId
     );
     const { rowLimit, setRowLimit } = useRowLimit(dispatch, environmentId);
-
+    const [samplingTables, setSamplingTables] = useState({});
+    const { setSampleRate, getSampleRate, getSamplingTables } =
+        useTableSampleRate(dispatch, environmentId, samplingTables);
     const [resultsCollapsed, setResultsCollapsed] = useState(false);
 
     const { searchAndReplaceProps, searchAndReplaceRef } =
@@ -415,6 +429,12 @@ const QueryComposer: React.FC = () => {
 
     const [hasLintErrors, setHasLintErrors] = useState(false);
 
+    const [showTableSamplingInfoModal, setShowTableSamplingInfoModal] =
+        useState(false);
+
+    const [showPeerReviewModal, setShowPeerReviewModal] = useState(false);
+    const hasPeerReviewFeature = engine?.feature_params?.peer_review;
+
     const runButtonRef = useRef<IQueryRunButtonHandles>(null);
     const clickOnRunButton = useCallback(() => {
         if (runButtonRef.current) {
@@ -423,10 +443,7 @@ const QueryComposer: React.FC = () => {
     }, []);
 
     const { queryEditorRef, handleFormatQuery } = useQueryEditorHelpers();
-    const { getLintAnnotations, hasQueryValidators } = useQueryLint(
-        engine,
-        templatedVariables
-    );
+    const hasQueryValidators = Boolean(engine?.feature_params?.validator);
     const {
         transpilerConfig,
         startQueryTranspile,
@@ -464,66 +481,122 @@ const QueryComposer: React.FC = () => {
         navigateWithinEnv(`/datadoc/${dataDoc.id}/`);
     }, [executionId, query, engine.id, templatedVariables]);
 
-    const getCurrentSelectedQuery = useCallback(() => {
-        const selectedRange = queryEditorRef.current?.getEditorSelection();
-        return getSelectedQuery(query, selectedRange);
-    }, [query, queryEditorRef]);
+    const getCurrentSelectedQuery = useCallback(
+        () => queryEditorRef.current?.getSelection?.() ?? query,
+        [queryEditorRef, query]
+    );
 
     const triggerSurvey = useSurveyTrigger();
-    const handleRunQuery = React.useCallback(async () => {
-        trackClick({
-            component: ComponentType.ADHOC_QUERY,
-            element: ElementType.RUN_QUERY_BUTTON,
-            aux: {
-                lintError: hasLintErrors,
-            },
-        });
-        // Throttle to prevent double run
-        await sleep(250);
-        const transformedQuery = await transformQuery(
-            getCurrentSelectedQuery(),
-            templatedVariables,
-            engine,
-            rowLimit
-        );
 
-        const queryId = await runQuery(
-            transformedQuery,
-            engine.id,
-            async (query, engineId) => {
-                const data = await dispatch(
-                    queryExecutionsAction.createQueryExecution(query, engineId)
-                );
-                return data.id;
-            }
-        );
-        triggerSurvey(SurveySurfaceType.QUERY_AUTHORING, {
-            query_execution_id: queryId,
-        });
-        if (queryId != null) {
-            setExecutionId(queryId);
-            setResultsCollapsed(false);
+    const getQueryExecutionMetadata = useCallback(() => {
+        const metadata = {};
+
+        const sampleRate = getSampleRate();
+        if (sampleRate > 0) {
+            metadata['sample_rate'] = sampleRate;
         }
-    }, [
-        rowLimit,
-        engine,
-        templatedVariables,
-        dispatch,
-        getCurrentSelectedQuery,
-        setExecutionId,
-        hasLintErrors,
-        triggerSurvey,
-    ]);
+
+        return Object.keys(metadata).length === 0 ? null : metadata;
+    }, [getSampleRate]);
+
+    const handleRunQuery = useCallback(
+        async (options?: {
+            element?: ElementType;
+            peerReviewParams?: IPeerReviewParams;
+            onSuccess?: (queryId: number) => void;
+        }) => {
+            const {
+                element = ElementType.RUN_QUERY_BUTTON,
+                peerReviewParams,
+                onSuccess,
+            } = options ?? {};
+
+            const sampleRate = getSampleRate();
+            const samplingTables = getSamplingTables();
+            const queryExecutionMetadata = getQueryExecutionMetadata();
+
+            trackClick({
+                component: ComponentType.ADHOC_QUERY,
+                element,
+                aux: {
+                    lintError: hasLintErrors,
+                    sampleRate,
+                },
+            });
+
+            // Throttle to prevent double run
+            await sleep(250);
+
+            const transformedQuery = await transformQuery(
+                getCurrentSelectedQuery(),
+                engine.language,
+                templatedVariables,
+                engine,
+                rowLimit,
+                samplingTables,
+                sampleRate
+            );
+
+            const queryId = await runQuery(
+                transformedQuery,
+                engine.id,
+                async (query, engineId) => {
+                    const data = await dispatch(
+                        queryExecutionsAction.createQueryExecution(
+                            query,
+                            engineId,
+                            null,
+                            queryExecutionMetadata,
+                            peerReviewParams
+                        )
+                    );
+                    return data.id;
+                }
+            );
+
+            triggerSurvey(SurveySurfaceType.QUERY_AUTHORING, {
+                query_execution_id: queryId,
+            });
+
+            if (queryId != null) {
+                setExecutionId(queryId);
+                setResultsCollapsed(false);
+                onSuccess?.(queryId);
+            }
+            return queryId;
+        },
+        [
+            getSampleRate,
+            getSamplingTables,
+            getQueryExecutionMetadata,
+            hasLintErrors,
+            getCurrentSelectedQuery,
+            engine,
+            templatedVariables,
+            rowLimit,
+            triggerSurvey,
+            dispatch,
+            setExecutionId,
+        ]
+    );
+
+    const onPeerReviewSubmit = useCallback(
+        async (peerReviewParams: IPeerReviewParams) => {
+            setShowPeerReviewModal(false);
+            return handleRunQuery({
+                element: ElementType.PEER_REVIEW_QUERY_BUTTON,
+                peerReviewParams,
+            });
+        },
+        [handleRunQuery, setShowPeerReviewModal]
+    );
 
     const keyMap = useKeyMap(clickOnRunButton, queryEngines, setEngineId);
 
     const [editorHasSelection, setEditorHasSelection] = useState(false);
-    const handleEditorSelection = React.useCallback(
-        (_: string, range: IRange) => {
-            setEditorHasSelection(!!range);
-        },
-        []
-    );
+    const handleEditorSelection = React.useCallback((hasSelection: boolean) => {
+        setEditorHasSelection(hasSelection);
+    }, []);
 
     const scrollToCollapseExecution = React.useCallback(
         (event, direction, elementRef) => {
@@ -537,6 +610,22 @@ const QueryComposer: React.FC = () => {
         []
     );
 
+    const handleTablesChange = React.useCallback(
+        async (tablesByName: Record<string, IDataTable>) => {
+            const samplingTables = {};
+            Object.keys(tablesByName).forEach((tableName) => {
+                const table = tablesByName[tableName];
+                if (table?.custom_properties?.sampling) {
+                    samplingTables[tableName] = {
+                        sampled_table: table.custom_properties?.sampled_table,
+                    };
+                }
+            });
+            setSamplingTables(samplingTables);
+        },
+        [setSamplingTables]
+    );
+
     const editorDOM = (
         <>
             <BoundQueryEditor
@@ -547,9 +636,11 @@ const QueryComposer: React.FC = () => {
                 keyMap={keyMap}
                 height="full"
                 engine={engine}
+                hasQueryLint={hasQueryValidators}
                 onSelection={handleEditorSelection}
-                getLintErrors={getLintAnnotations}
                 onLintCompletion={setHasLintErrors}
+                onTablesChange={handleTablesChange}
+                templatedVariables={templatedVariables}
             />
         </>
     );
@@ -589,7 +680,16 @@ const QueryComposer: React.FC = () => {
                     >
                         <IconButton icon="ChevronDown" noPadding />
                     </div>
-                    <QueryComposerExecution id={executionId} />
+                    <QueryComposerExecution
+                        id={executionId}
+                        onSamplingInfoClick={() =>
+                            setShowTableSamplingInfoModal(true)
+                        }
+                        hasSamplingTables={
+                            Object.keys(samplingTables).length > 0
+                        }
+                        sampleRate={getSampleRate()}
+                    />
                 </div>
             </Resizable>
         );
@@ -611,6 +711,15 @@ const QueryComposer: React.FC = () => {
         </Modal>
     );
 
+    const renderTableSamplingInfoDOM = showTableSamplingInfoModal && (
+        <DataDocTableSamplingInfo
+            query={getCurrentSelectedQuery()}
+            language={engine.language}
+            samplingTables={getSamplingTables()}
+            onHide={() => setShowTableSamplingInfoModal(false)}
+        />
+    );
+
     const queryEditorWrapperClassname = clsx({
         'query-editor-wrapper': true,
         mb16: executionId != null,
@@ -628,6 +737,7 @@ const QueryComposer: React.FC = () => {
             </div>
             {executionDOM()}
             {udfModalDOM}
+            {renderTableSamplingInfoDOM}
         </div>
     );
 
@@ -644,6 +754,12 @@ const QueryComposer: React.FC = () => {
                 runButtonTooltipPos={'down'}
                 rowLimit={rowLimit}
                 onRowLimitChange={setRowLimit}
+                hasSamplingTables={Object.keys(samplingTables).length > 0}
+                sampleRate={getSampleRate()}
+                onSampleRateChange={setSampleRate}
+                onTableSamplingInfoClick={() =>
+                    setShowTableSamplingInfoModal(true)
+                }
             />
         </div>
     );
@@ -684,6 +800,13 @@ const QueryComposer: React.FC = () => {
                 hasValidator={hasQueryValidators}
             />
         </Modal>
+    );
+
+    const peerReviewModalDOM = showPeerReviewModal && (
+        <QueryPeerReviewModal
+            onSubmit={onPeerReviewSubmit}
+            onHide={() => setShowPeerReviewModal(false)}
+        />
     );
 
     const getAdditionalDropDownButtonDOM = () => {
@@ -746,6 +869,16 @@ const QueryComposer: React.FC = () => {
             });
         }
 
+        if (hasPeerReviewFeature) {
+            additionalButtons.push({
+                name: 'Request Query Review',
+                onClick: () => setShowPeerReviewModal(true),
+                icon: 'Send',
+                tooltip: 'Request a peer review for your query',
+                tooltipPos: 'right',
+            });
+        }
+
         return (
             <>
                 <Dropdown
@@ -756,6 +889,7 @@ const QueryComposer: React.FC = () => {
                 </Dropdown>
                 {templatedModalDOM}
                 {templatedQueryViewModalDOM}
+                {peerReviewModalDOM}
             </>
         );
     };

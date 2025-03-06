@@ -15,11 +15,26 @@ import ds from 'lib/datasource';
 import type { ITableSearchResult } from 'redux/dataTableSearch/types';
 
 export const SearchTableResource = {
-    searchConcise: (params: ISearchTableParams) =>
-        ds.fetch<{
+    searchConcise: (params: ISearchTableParams) => {
+        const {
+            fields = ['table_name'],
+            sort_key: sortKey = '_score',
+            sort_order: sortOrder = 'desc',
+            limit = 10,
+        } = params;
+
+        return ds.fetch<{
             results: ITableSearchResult[];
             count: number;
-        }>('/search/tables/', { ...params, concise: true }),
+        }>('/search/tables/', {
+            ...params,
+            fields,
+            sort_key: sortKey,
+            sort_order: sortOrder,
+            limit,
+            concise: true,
+        });
+    },
 
     search: (params: ISearchTableParams) =>
         ds.fetch<{
@@ -66,6 +81,12 @@ export const SearchQueryResource = {
             results: IQueryPreview[];
             count: number;
         }>('/search/queries/', params as unknown as Record<string, unknown>),
+
+    vectorSearch: (params: ISearchQueryParams) =>
+        ds.fetch<{
+            results: IQueryPreview[];
+            count: number;
+        }>('/search/queries/vector/', { ...params }),
 };
 
 export const SearchDataDocResource = {

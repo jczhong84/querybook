@@ -102,10 +102,19 @@ declare module 'config/querybook_public_config.yaml' {
             table_vector_search: {
                 enabled: boolean;
             };
+
+            query_vector_search: {
+                enabled: boolean;
+            };
+
+            sql_complete: {
+                enabled: boolean;
+            };
         };
         survey?: {
             global_response_cooldown?: number;
             global_trigger_cooldown?: number;
+            global_trigger_duration?: number;
             global_max_per_week?: number;
             global_max_per_day?: number;
 
@@ -113,9 +122,33 @@ declare module 'config/querybook_public_config.yaml' {
                 surface: string;
                 response_cooldown?: number;
                 trigger_cooldown?: number;
+                trigger_duration?: number;
                 max_per_week?: number;
                 max_per_day?: number;
             }>;
+        };
+        table_sampling?: {
+            enabled: boolean;
+            sample_rates: Array<number>;
+            default_sample_rate: number;
+            sample_user_guide_link: string;
+            sampling_tool_tip_delay: number;
+        };
+        github_integration: {
+            enabled: boolean;
+        };
+        peer_review: {
+            enabled: boolean;
+            request_texts: {
+                // When users request reviews
+                description: string;
+                guide_link: string;
+                tip: string;
+            };
+            reviewer_texts: {
+                // When reviewers take actions
+                approve_message: string;
+            };
         };
     };
     export default data;

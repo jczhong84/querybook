@@ -14,6 +14,7 @@ export const QueryComparison: React.FC<{
     toQueryTitle?: string | React.ReactNode;
     disableHighlight?: boolean;
     hideEmptyQuery?: boolean;
+    autoHeight?: boolean;
 }> = ({
     fromQuery,
     toQuery,
@@ -21,6 +22,7 @@ export const QueryComparison: React.FC<{
     toQueryTitle,
     disableHighlight,
     hideEmptyQuery,
+    autoHeight = false,
 }) => {
     const hasHiddenQuery = hideEmptyQuery && (!fromQuery || !toQuery);
 
@@ -66,7 +68,7 @@ export const QueryComparison: React.FC<{
                     {fromQueryTitle && (
                         <div className="mb12">
                             {typeof fromQueryTitle === 'string' ? (
-                                <Tag>{fromQueryTitle}</Tag>
+                                <Tag className="truncate">{fromQueryTitle}</Tag>
                             ) : (
                                 fromQueryTitle
                             )}
@@ -76,7 +78,7 @@ export const QueryComparison: React.FC<{
                         highlightRanges={removedRanges}
                         query={fromQuery}
                         maxEditorHeight={'40vh'}
-                        autoHeight={false}
+                        autoHeight={autoHeight}
                     />
                 </div>
             )}
@@ -85,7 +87,7 @@ export const QueryComparison: React.FC<{
                     {toQueryTitle && (
                         <div className="mb12">
                             {typeof toQueryTitle === 'string' ? (
-                                <Tag>{toQueryTitle}</Tag>
+                                <Tag className="truncate">{toQueryTitle}</Tag>
                             ) : (
                                 toQueryTitle
                             )}
@@ -95,7 +97,7 @@ export const QueryComparison: React.FC<{
                         highlightRanges={addedRanges}
                         query={toQuery}
                         maxEditorHeight={'40vh'}
-                        autoHeight={false}
+                        autoHeight={autoHeight}
                     />
                 </div>
             )}

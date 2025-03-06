@@ -43,7 +43,7 @@ export const QueryView: React.FunctionComponent<IProps> = ({ queryId }) => {
             return (
                 <ErrorPage
                     errorTitle="Access Denied"
-                    errorMessage="You do not have access to this query execution"
+                    errorMessage="You do not have access to this query execution."
                 >
                     <AccessRequestButton
                         onAccessRequest={handleQueryExecutionAccessRequest}
@@ -61,7 +61,7 @@ export const QueryView: React.FunctionComponent<IProps> = ({ queryId }) => {
                 item={queryExecution}
                 itemKey={queryId}
                 itemLoader={fetchQueryExecution}
-                errorRenderer={(error) => errorPage(error)}
+                errorRenderer={errorPage}
             >
                 <QueryViewEditor queryExecution={queryExecution} />
                 <QueryViewExecution queryExecution={queryExecution} />

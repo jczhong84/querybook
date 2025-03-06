@@ -24,14 +24,14 @@ Please install Docker before trying out Querybook.
 
 ## Quick setup
 
-Pull this repo and run `make`. Visit https://localhost:10001 when the build completes.
+Pull this repo and run `make`. Visit http://localhost:10001 when the build completes.
 
-For more details on installation, [click here](docs_website/docs/setup_guide/overview.md)
+For more details on installation, [click here](docs_website/docs/setup_guide/overview.mdx)
 
 ## Configuration
 
-For infrastructure configuration, [click here](docs_website/docs/configurations/infra_config.md)
-For general configuration, [click here](docs_website/docs/configurations/general_config.md)
+For infrastructure configuration, [click here](docs_website/docs/configurations/infra_config.mdx)
+For general configuration, [click here](docs_website/docs/configurations/general_config.mdx)
 
 ## Supported Integrations
 
@@ -54,6 +54,7 @@ For general configuration, [click here](docs_website/docs/configurations/general
     -   Google Cloud OAuth
     -   Okta OAuth
     -   GitHub OAuth
+    -   Auth0 OAuth
 -   LDAP
 
 ### Metastore

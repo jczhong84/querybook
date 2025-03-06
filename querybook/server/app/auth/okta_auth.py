@@ -28,7 +28,7 @@ class NoopAuth(requests.auth.AuthBase):
 
 
 class OktaLoginManager(OAuthLoginManager):
-    def get_okta_urls(self):
+    def get_oauth_urls(self):
         okta_base_url = get_env_config("OKTA_BASE_URL")
         authorization_url = f"{okta_base_url}/v1/authorize"
         token_url = f"{okta_base_url}/v1/token"
@@ -38,7 +38,7 @@ class OktaLoginManager(OAuthLoginManager):
     @property
     @in_mem_memoized()
     def oauth_config(self):
-        authorization_url, token_url, profile_url = self.get_okta_urls()
+        authorization_url, token_url, profile_url = self.get_oauth_urls()
 
         return {
             "callback_url": "{}{}".format(
@@ -85,7 +85,7 @@ class OktaLoginManager(OAuthLoginManager):
         LOG.debug("Handling Oauth callback...")
 
         if request.args.get("error"):
-            return f"<h1>Error: { Markup.escape(request.args.get('error')) }</h1>"
+            return f"<h1>Error: {Markup.escape(request.args.get('error'))}</h1>"
 
         code = request.args.get("code")
         try:
@@ -115,8 +115,8 @@ class OktaLoginManager(OAuthLoginManager):
 
     @with_session
     def login_user(self, username, email, fullname, session=None):
-        if not username:
-            raise AuthenticationError("Username must not be empty!")
+        if not username or not isinstance(username, str):
+            raise AuthenticationError("Please provide a valid username")
 
         user = get_user_by_name(username, session=session)
         if not user:

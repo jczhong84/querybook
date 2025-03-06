@@ -108,16 +108,19 @@
                     }
 
                     .block-crud-buttons {
+                        // Use opacity to prevent layout shift
                         opacity: 0;
+
+                        // Physically remove the cell header buttons to prevent
+                        // them from stealing hover events from the footer buttons
+                        &.is-header {
+                            display: none;
+                        }
+
                         top: -17px;
                         position: relative;
                         text-align: center;
                         margin: 0px 8px;
-
-                        &.active,
-                        &:hover {
-                            opacity: 1;
-                        }
 
                         .block-left-buttons-wrapper {
                             position: absolute;
@@ -147,19 +150,15 @@
                 .additional-dropdown-button,
                 .add-snippet-wrapper,
                 .query-editor-float-buttons-wrapper,
-                .chart-cell-controls,
-                .QueryGenerationButton {
+                .chart-cell-controls {
                     opacity: 0;
                     transition: opacity 0.2s ease-out;
-                }
-
-                &:hover .add-new-line-button {
-                    opacity: 1;
                 }
 
                 &:hover {
                     .data-doc-cell-divider-container {
                         .block-crud-buttons {
+                            display: flex;
                             opacity: 1;
                         }
                     }
@@ -169,9 +168,20 @@
                     .additional-dropdown-button,
                     .add-snippet-wrapper,
                     .query-editor-float-buttons-wrapper,
-                    .chart-cell-controls,
-                    .QueryGenerationButton {
+                    .chart-cell-controls {
                         opacity: 1;
+                    }
+
+                    .AICommandInput {
+                        .stars-icon {
+                            color: var(--color-accent);
+                        }
+                    }
+
+                    .QueryCellTitle {
+                        .IconButton {
+                            color: var(--color-accent);
+                        }
                     }
                 }
             }

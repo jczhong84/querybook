@@ -8,6 +8,10 @@ import { queryEngineStatusToIconStatus } from 'const/queryStatusIcon';
 import { TooltipDirection } from 'const/tooltip';
 import { MIN_ENGINE_TO_SHOW_FILTER } from 'const/uiConfig';
 import {
+    getTableSamplingRateOptions,
+    TABLE_SAMPLING_CONFIG,
+} from 'lib/public-config';
+import {
     ALLOW_UNLIMITED_QUERY,
     DEFAULT_ROW_LIMIT,
     ROW_LIMIT_SCALE,
@@ -16,7 +20,9 @@ import { getShortcutSymbols, KeyMap } from 'lib/utils/keyboard';
 import { stopPropagation } from 'lib/utils/noop';
 import { formatNumber } from 'lib/utils/number';
 import { queryEngineStatusByIdEnvSelector } from 'redux/queryEngine/selector';
+import { IStoreState } from 'redux/store/types';
 import { AsyncButton, IAsyncButtonHandles } from 'ui/AsyncButton/AsyncButton';
+import { IconButton } from 'ui/Button/IconButton';
 import { Dropdown } from 'ui/Dropdown/Dropdown';
 import { Icon } from 'ui/Icon/Icon';
 import { ListMenu } from 'ui/Menu/ListMenu';
@@ -38,6 +44,11 @@ interface IQueryRunButtonProps extends IQueryEngineSelectorProps {
     rowLimit?: number;
     onRunClick: () => any;
     onRowLimitChange?: (rowLimit: number) => void;
+
+    hasSamplingTables?: boolean;
+    sampleRate?: number;
+    onSampleRateChange?: (sampleRate: number) => void;
+    onTableSamplingInfoClick?: () => void;
 }
 
 export interface IQueryRunButtonHandles {
@@ -60,6 +71,11 @@ export const QueryRunButton = React.forwardRef<
             onEngineIdSelect,
             rowLimit,
             onRowLimitChange,
+
+            hasSamplingTables,
+            sampleRate,
+            onSampleRateChange,
+            onTableSamplingInfoClick,
         },
         ref
     ) => {
@@ -93,6 +109,16 @@ export const QueryRunButton = React.forwardRef<
             />
         );
 
+        const tableSamplingDOM =
+            !disabled && TABLE_SAMPLING_CONFIG.enabled && hasSamplingTables ? (
+                <TableSamplingSelector
+                    sampleRate={sampleRate}
+                    setSampleRate={onSampleRateChange}
+                    tooltipPos={runButtonTooltipPos}
+                    onTableSamplingInfoClick={onTableSamplingInfoClick}
+                />
+            ) : null;
+
         const isRowLimitEnabled =
             queryEngineById[engineId]?.feature_params.row_limit;
         const rowLimitDOM =
@@ -113,6 +139,7 @@ export const QueryRunButton = React.forwardRef<
                     engineId={engineId}
                     onEngineIdSelect={onEngineIdSelect}
                 />
+                {tableSamplingDOM}
                 {rowLimitDOM}
                 {runButtonDOM}
             </div>
@@ -202,6 +229,20 @@ export const QueryEngineSelector: React.FC<IQueryEngineSelectorProps> = ({
     );
 };
 
+export const SamplingInfoButton: React.FC<{
+    tooltipPos: TooltipDirection;
+    onSamplingInfoClick: () => void;
+    size: number;
+}> = ({ tooltipPos, onSamplingInfoClick, size }) => (
+    <div
+        className="flex-center"
+        aria-label="Click to see how table sampling works"
+        data-balloon-pos={tooltipPos}
+    >
+        <IconButton icon="Info" size={size} onClick={onSamplingInfoClick} />
+    </div>
+);
+
 const rowLimitOptions = ROW_LIMIT_SCALE.map((value) => ({
     label: formatNumber(value),
     value,
@@ -246,6 +287,70 @@ const QueryLimitSelector: React.FC<{
             layout={['bottom', 'right']}
         >
             <ListMenu items={rowLimitMenuItems} type="select" />
+        </Dropdown>
+    );
+};
+
+const TableSamplingSelector: React.FC<{
+    sampleRate: number | undefined;
+    setSampleRate: (sampleRate: number) => void;
+    tooltipPos: TooltipDirection;
+    onTableSamplingInfoClick: () => void;
+}> = ({ sampleRate, setSampleRate, tooltipPos, onTableSamplingInfoClick }) => {
+    const sampleRateOptions = React.useMemo(getTableSamplingRateOptions, []);
+    const userDefaultTableSampleRate = useSelector((state: IStoreState) => {
+        const sampleRateSetting = parseFloat(
+            state.user.computedSettings['table_sample_rate']
+        );
+        return isNaN(sampleRateSetting)
+            ? TABLE_SAMPLING_CONFIG.default_sample_rate
+            : sampleRateSetting;
+    });
+
+    React.useEffect(() => {
+        // If it is a new cell without the sample rate selected, use the default sample rate from user settings
+        if (isNaN(sampleRate)) {
+            setSampleRate(userDefaultTableSampleRate);
+        }
+    }, [sampleRate, setSampleRate, userDefaultTableSampleRate]);
+
+    const selectedSampleRateText = React.useMemo(() => {
+        if (sampleRate > 0) {
+            return sampleRate + '%';
+        }
+        return 'none';
+    }, [sampleRate]);
+
+    const sampleRateMenuItems = sampleRateOptions.map((option) => ({
+        name: <span>{option.label}</span>,
+        onClick: () => setSampleRate(option.value),
+        checked: option.value === sampleRate,
+    }));
+
+    return (
+        <Dropdown
+            customButtonRenderer={() => (
+                <div className="flex-row">
+                    <SamplingInfoButton
+                        tooltipPos={tooltipPos}
+                        onSamplingInfoClick={onTableSamplingInfoClick}
+                        size={20}
+                    />
+                    <div
+                        className="flex-center"
+                        aria-label="Only applies to tables support sampling"
+                        data-balloon-pos={tooltipPos}
+                    >
+                        <span className="mr4">
+                            Sample: {selectedSampleRateText}
+                        </span>
+                        <Icon name="ChevronDown" size={24} color="light" />
+                    </div>
+                </div>
+            )}
+            layout={['bottom', 'right']}
+        >
+            <ListMenu items={sampleRateMenuItems} type="select" />
         </Dropdown>
     );
 };
