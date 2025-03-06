@@ -25,6 +25,14 @@ cell_types:
             query_collapsed: false
             limit: 0
             sample_rate: 0
+    python:
+        key: 'python'
+        name: 'Python'
+        icon: 'Terminal'
+        meta:
+            collapsed: false
+        meta_default:
+            collapsed: false
     chart:
         key: 'chart'
         name: 'Chart'

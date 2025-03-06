@@ -119,6 +119,15 @@ def serialize_cell_content(cell: DataCell, exclude_metadata: bool = False) -> st
         content = "*Chart generated from the metadata.*\n"
         return header + content
 
+    elif cell.cell_type == DataCellType.python:
+        python_title = cell_meta.get("title") or "Python"
+        header = f"## Python: {python_title}\n\n"
+        if exclude_metadata:  # Exclude code fences
+            content = f"{cell.context.strip()}\n"
+        else:
+            content = f"```python\n{cell.context.strip()}\n```\n"
+        return header + content
+
     else:
         raise ValueError(f"Unknown cell type: {cell.cell_type}")
 
@@ -172,7 +181,7 @@ def create_datadoc_from_metadata(metadata: dict) -> DataDoc:
 def deserialize_datadoc_content(content_str: str) -> List[DataCell]:
     """
     Deserialize the content part of the markdown into a list of DataCell instances.
-    Handles Query, Text, and Chart cell types.
+    Handles Query, Text, Chart, and Python cell types.
     """
     cells = []
     # Split the content by the HTML comment markers. Each cell starts with <!--\nmetadata\n-->
@@ -218,6 +227,15 @@ def deserialize_datadoc_content(content_str: str) -> List[DataCell]:
         elif cell_type_enum == DataCellType.chart:
             # Chart cells have no context since they're created via metadata
             context = None
+        elif cell_type_enum == DataCellType.python:
+            # Extract the Python code block
+            python_pattern = re.compile(
+                r"## Python: [^\n]+\n\n```python\n([\s\S]*?)\n```", re.DOTALL
+            )
+            match = python_pattern.search(cell_content)
+            if not match:
+                raise ValueError("Python cell missing Python code block.")
+            context = match.group(1).strip()
         else:
             raise ValueError(f"Unsupported cell type: {cell_type_enum}")
 

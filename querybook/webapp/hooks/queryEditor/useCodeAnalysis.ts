@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useDebounce } from 'hooks/useDebounce';
 import { ICodeAnalysis } from 'lib/sql-helper/sql-lexer';
-import { analyzeCode } from 'lib/web-worker';
+import { analyzeCode } from 'lib/python-worker';
 
 interface IUseCodeAnalysisParams {
     language: string;
