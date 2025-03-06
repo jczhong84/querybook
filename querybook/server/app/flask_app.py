@@ -7,12 +7,22 @@ from flask_socketio import SocketIO
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
-
+from flask_restx import Api, Resource, Namespace
 
 from const.path import BUILD_PATH, STATIC_PATH, WEBAPP_DIR_PATH
 from env import QuerybookSettings
 from lib.utils.json import JSONEncoder
 
+# Import all datasources
+from datasources import (
+    admin, admin_audit_log, board, comment, dag_exporter, data_element,
+    datadoc, event_log, github, impression, metastore, query_engine,
+    query_execution, query_review, query_snippet, query_transform,
+    schedule, search, survey, table_upload, tag, user, utils
+)
+
+# Import the register_routes function from admin
+from datasources.admin import register_routes as register_admin_routes
 
 def validate_db():
     # We need to make sure db connection is valid
@@ -29,7 +39,6 @@ def validate_db():
             raise Exception(
                 f"Invalid Database connection string {QuerybookSettings.DATABASE_CONN}"
             )
-
 
 def make_flask_app():
     app = Flask(__name__, static_folder=STATIC_PATH)
@@ -60,6 +69,58 @@ def make_flask_app():
     def add_csp_header(response):
         response.headers["Content-Security-Policy"] = csp_header_value
         return response
+
+    # Initialize Flask-RESTX
+    api = Api(app, version='1.0', title='Querybook API',
+              description='API for Querybook', doc='/api/docs')
+
+    # Create namespaces for all datasources
+    namespaces = {
+        'admin': Namespace('admin', description='Admin operations'),
+        'admin_audit_log': Namespace('admin_audit_log', description='Admin audit log operations'),
+        'board': Namespace('board', description='Board operations'),
+        'comment': Namespace('comment', description='Comment operations'),
+        'dag_exporter': Namespace('dag_exporter', description='DAG exporter operations'),
+        'data_element': Namespace('data_element', description='Data element operations'),
+        'datadoc': Namespace('datadoc', description='DataDoc operations'),
+        'event_log': Namespace('event_log', description='Event log operations'),
+        'github': Namespace('github', description='GitHub operations'),
+        'impression': Namespace('impression', description='Impression operations'),
+        'metastore': Namespace('metastore', description='Metastore operations'),
+        'query_engine': Namespace('query_engine', description='Query engine operations'),
+        'query_execution': Namespace('query_execution', description='Query execution operations'),
+        'query_review': Namespace('query_review', description='Query review operations'),
+        'query_snippet': Namespace('query_snippet', description='Query snippet operations'),
+        'query_transform': Namespace('query_transform', description='Query transform operations'),
+        'schedule': Namespace('schedule', description='Schedule operations'),
+        'search': Namespace('search', description='Search operations'),
+        'survey': Namespace('survey', description='Survey operations'),
+        'table_upload': Namespace('table_upload', description='Table upload operations'),
+        'tag': Namespace('tag', description='Tag operations'),
+        'user': Namespace('user', description='User operations'),
+        'utils': Namespace('utils', description='Utility operations'),
+    }
+
+    # Add namespaces to the API
+    for ns in namespaces.values():
+        api.add_namespace(ns)
+
+    # Register routes from all datasources
+    datasource_modules = [
+        admin, admin_audit_log, board, comment, dag_exporter, data_element,
+        datadoc, event_log, github, impression, metastore, query_engine,
+        query_execution, query_review, query_snippet, query_transform,
+        schedule, search, survey, table_upload, tag, user, utils
+    ]
+
+    for module in datasource_modules:
+        if hasattr(module, 'register_routes'):
+            try:
+                module.register_routes(namespaces[module.__name__.split('.')[-1]])
+            except Exception as e:
+                app.logger.error(f"Error registering routes for {module.__name__}: {str(e)}")
+        else:
+            app.logger.warning(f"Module {module.__name__} does not have a register_routes function")
 
     return app
 
@@ -157,7 +218,7 @@ def make_socketio(app):
     return socketio
 
 
-def make_blue_print(app, limiter):
+def make_blue_print(app, limiter, api):
     # Have flask automatically return the files within the build, so that it gzips them
     # and handles its 200/304 logic.
     blueprint = Blueprint(
@@ -168,13 +229,28 @@ def make_blue_print(app, limiter):
     )
     app.register_blueprint(blueprint)
     limiter.exempt(blueprint)
+
+    # Add Swagger UI
+    @app.route('/swagger')
+    def swagger_ui():
+        return api.swagger_ui()
+
     return blueprint
 
 
 validate_db()
 flask_app = make_flask_app()
+api = Api(flask_app, version='1.0', title='Querybook API',
+          description='API for Querybook', doc='/api/docs')
 limiter = make_limiter(flask_app)
-make_blue_print(flask_app, limiter)
+make_blue_print(flask_app, limiter, api)
 cache = make_cache(flask_app)
 celery = make_celery(flask_app)
 socketio = make_socketio(flask_app)
+
+# Add a sample endpoint
+@api.route('/hello')
+class HelloWorld(Resource):
+    def get(self):
+        """A simple hello world endpoint"""
+        return {'message': 'Hello from Querybook API!'}
