@@ -7,6 +7,7 @@ import { DataDocCellWrapper } from 'components/DataDocCellWrapper/DataDocCellWra
 import { DataDocChartCell } from 'components/DataDocChartCell/DataDocChartCell';
 import { DataDocQueryCell } from 'components/DataDocQueryCell/DataDocQueryCell';
 import { DataDocTextCell } from 'components/DataDocTextCell/DataDocTextCell';
+import { DataDocPythonCell } from 'components/DataDocPythonCell/DataDocPythonCell';
 import { UserAvatar } from 'components/UserBadge/UserAvatar';
 import { ComponentType, ElementType } from 'const/analytics';
 import {
@@ -176,37 +177,52 @@ export const DataDocCell: React.FunctionComponent<IDataDocCellProps> =
                 };
 
                 let cellDOM = null;
-                if (cell.cell_type === 'query') {
-                    const allProps = {
-                        ...cellProps,
-                        query: cell.context,
-                        docId,
-                        cellId: cell.id,
-                        queryIndexInDoc,
-                        templatedVariables,
-                        isFullScreen,
-                        toggleFullScreen,
-                    };
-                    cellDOM = <DataDocQueryCell {...allProps} />;
-                } else if (cell.cell_type === 'chart') {
-                    cellDOM = (
-                        <DataDocChartCell
-                            {...cellProps}
-                            previousQueryCellId={lastQueryCellId}
-                            context={cell.context}
-                            meta={cell.meta}
-                            dataDocId={docId}
-                        />
-                    );
-                } else if (cell.cell_type === 'text') {
-                    // default text
-                    cellDOM = (
-                        <DataDocTextCell
-                            {...cellProps}
-                            cellId={cell.id}
-                            context={cell.context}
-                        />
-                    );
+                switch (cell.cell_type) {
+                    case 'query':
+                        const allProps = {
+                            ...cellProps,
+                            query: cell.context,
+                            docId,
+                            cellId: cell.id,
+                            queryIndexInDoc,
+                            templatedVariables,
+                            isFullScreen,
+                            toggleFullScreen,
+                        };
+                        cellDOM = <DataDocQueryCell {...allProps} />;
+                        break;
+                    case 'chart':
+                        cellDOM = (
+                            <DataDocChartCell
+                                {...cellProps}
+                                previousQueryCellId={lastQueryCellId}
+                                context={cell.context}
+                                meta={cell.meta}
+                                dataDocId={docId}
+                            />
+                        );
+                        break;
+                    case 'text':
+                        cellDOM = (
+                            <DataDocTextCell
+                                {...cellProps}
+                                cellId={cell.id}
+                                context={cell.context}
+                            />
+                        );
+                        break;
+                    case 'python':
+                        cellDOM = (
+                            <DataDocPythonCell
+                                {...cellProps}
+                                cellId={cell.id}
+                                context={cell.context}
+                                docId={docId}
+                            />
+                        );
+                        break;
+                    default:
+                        console.warn(`Unknown cell type: ${cell.cell_type}`);
                 }
 
                 return cellDOM;

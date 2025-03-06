@@ -94,7 +94,10 @@ class DataDoc(Base, CRUDMixin):
         return data_doc_dict
 
     def get_query_cells(self):
-        return [cell for cell in self.cells if cell.cell_type == DataCellType.query]
+        return [cell for cell in self.cells if cell.cell_type in [DataCellType.query, DataCellType.python]]
+
+    def get_python_cells(self):
+        return [cell for cell in self.cells if cell.cell_type == DataCellType.python]
 
 
 class DataCell(Base):
@@ -131,6 +134,10 @@ class DataCell(Base):
             item["query_executions"] = [qe.to_dict() for qe in self.query_executions]
 
         return item
+
+    @property
+    def is_python_cell(self):
+        return self.cell_type == DataCellType.python
 
 
 class DataDocDataCell(Base):
